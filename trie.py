@@ -228,7 +228,7 @@ class Trie(object):
             # iterate each character in word
             iterator = word
         elif self.type == TYPES.EXTENDED:
-            # iterate subsets in word
+            # iterate subsets in extended word
             iterator = word.split(self.delimiter)
         else:
             raise NotImplementedError('Trie type unsupported.')
