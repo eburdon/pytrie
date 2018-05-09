@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 #
 # Copyright (c) 2011 Kyle Gorman
-# 
+# Modified 2018 Erika Burdon
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
@@ -19,18 +20,28 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
-# 
+#
 # trie.py
 # Python implementation of the 'trie' data structure
-# 
+#
 # Kyle Gorman <kgorman@ling.upenn.ed>
+# Erika Burdon <erikaeburdon@gmail.com>
+
+import json
 
 from functools import partial
+from enum import Enum
+
+
+class TYPES(Enum):
+    STANDARD = 1
+    EXTENDED = 2
+
 
 class memoize(object):
     """
     Decorator. Caches a function's return value each time it is called.
-    If called later with the same arguments, the cached value is returned 
+    If called later with the same arguments, the cached value is returned
     (not reevaluated).
     """
 
@@ -51,7 +62,7 @@ class memoize(object):
             return self.func(*args)
 
     def __get__(self, obj, objtype=None):
-        if obj is None:
+        if obj is '':
             return self.func
         return partial(self, obj)
 
@@ -60,7 +71,7 @@ class memoize(object):
 
 
 class Trie(object):
-    """ 
+    """
     A Python implementation of a prefix tree
 
     # initialization
@@ -89,8 +100,10 @@ class Trie(object):
     ''
     """
 
-    def __init__(self):
+    def __init__(self, trie_type=TYPES.STANDARD, delimiter=':'):
         self.root = {}
+        self.type = trie_type
+        self.delimiter = delimiter
 
     def __repr__(self):
         return 'Trie(%r)' % self.root
@@ -110,34 +123,82 @@ class Trie(object):
 
     @memoize
     def __contains__(self, word):
-        """ 
-        True if "word" is a licit completion 
+        """
+        True if "word" is a licit completion
         """
         curr_node = self.root
-        for char in word:
+
+        iterator = self._get_iterator(word)
+
+        for char in iterator:
             # try/except is faster than checking for key membership
             try:
                 curr_node = curr_node[char]
             except KeyError:
                 return False
-        if None in curr_node: # just make sure it's a licit completion 
+
+        if '' in curr_node:  # just make sure it's a licit completion
             return True
-        else: # an incomplete string
+        else:  # an incomplete string
             return False
+
+    def unload(self, filename):
+        """
+        Dump trie as JSON to file.
+        """
+        data = json.dumps(self.root) + '\n'
+
+        with open(filename, 'w+') as target_file:
+            target_file.write(data)
+
+    def load(self, filename):
+        """
+        Load JSON file as prefix trie
+        """
+        data = None
+        with open(filename, 'r') as input_file:
+            line = input_file.readline()
+            data = json.loads(line)
+
+        self.root = data
+
+    def assign(self, word, key, value):
+        """
+        Add node value to leaf word.
+        """
+        curr_node = self.root
+
+        iterator = self._get_iterator(word)
+
+        for char in iterator:
+            # try/except is faster than checking for key membership
+            try:
+                curr_node = curr_node[char]
+            except KeyError:
+                # Do nothing; ignore our problems
+                return
+
+        # Add another item to leaf
+        # None still represents terminal; trie can access 'value'
+        curr_node[key] = value
 
     def add(self, word):
         """
         add an iterable (probably a string) to the trie
         """
         curr_node = self.root
-        for char in word:
+
+        iterator = self._get_iterator(word)
+
+        for char in iterator:
             # try/except is faster than checking for key membership
-            try: 
+            try:
                 curr_node = curr_node[char]
             except KeyError:
-                curr_node[char] = {} # make it
-                curr_node = curr_node[char] # then enter it
-        curr_node[None] = word # None is then the "terminal" symbol
+                curr_node[char] = {}  # make it
+                curr_node = curr_node[char]  # then enter it
+
+        curr_node[''] = word  # None is then the "terminal" symbol
 
     def update(self, words):
         """ 
@@ -148,8 +209,8 @@ class Trie(object):
 
     def _traverse(self, curr_node):
         for char in curr_node:
-            if char == None:
-                yield curr_node[None]
+            if char == '':
+                yield curr_node['']
             else:
                 yield self._traverse(curr_node[char])
 
@@ -158,8 +219,21 @@ class Trie(object):
             if getattr(i, '__iter__', False):
                 for j in self._smash(i):
                     yield j
-            else: # base case
+            else:  # base case
                 yield i
+
+    def _get_iterator(self, word):
+        iterator = None
+        if self.type == TYPES.STANDARD:
+            # iterate each character in word
+            iterator = word
+        elif self.type == TYPES.EXTENDED:
+            # iterate subsets in word
+            iterator = word.split(self.delimiter)
+        else:
+            raise NotImplementedError('Trie type unsupported.')
+
+        return iterator
 
     def autocomplete(self, prefix):
         """ 
@@ -171,8 +245,8 @@ class Trie(object):
             # try/except is faster than checking for key membership
             try:
                 curr_node = curr_node[char]
-            except KeyError: 
-                return [] # break out
+            except KeyError:
+                return []  # break out
         # recursively follow all the other paths
         return self._smash(self._traverse(curr_node))
 
